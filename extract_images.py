@@ -19,7 +19,7 @@ def get_column_index(col_letter):
     """将Excel列字母转换为索引"""
     return string.ascii_uppercase.index(col_letter)
 
-def extract_images_from_excel(excel_file, output_folder='extracted_images', name_col_idx=1, img_col_indices=None, name_suffix=''):
+def extract_images_from_excel(excel_file, output_folder='extracted_images', name_col_idx=1, img_col_indices=None, name_suffix='', worksheet_name=None):
     """从Excel文件中提取图片
     
     参数:
@@ -46,8 +46,11 @@ def extract_images_from_excel(excel_file, output_folder='extracted_images', name
         print(error_msg)
         return False, error_msg
     
-    # 获取活动工作表
-    ws = wb.active
+    # 获取指定工作表或活动工作表
+    if worksheet_name and worksheet_name in wb.sheetnames:
+        ws = wb[worksheet_name]
+    else:
+        ws = wb.active
     print(f"正在处理工作表: {ws.title}")
     
     # 查找所有图片
@@ -127,7 +130,7 @@ class ExcelImageExtractorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Excel图片提取工具")
-        self.root.geometry("600x450")
+        self.root.geometry("600x500")
         self.root.resizable(True, True)
         
         # 设置样式
@@ -148,6 +151,16 @@ class ExcelImageExtractorApp:
         self.file_path_var = tk.StringVar()
         ttk.Entry(file_frame, textvariable=self.file_path_var, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(file_frame, text="浏览...", command=self.browse_file).pack(side=tk.LEFT, padx=5)
+        
+        # 工作表选择
+        worksheet_frame = ttk.Frame(main_frame)
+        worksheet_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(worksheet_frame, text="工作表:").pack(side=tk.LEFT, padx=5)
+        self.worksheet_var = tk.StringVar()
+        self.worksheet_combo = ttk.Combobox(worksheet_frame, textvariable=self.worksheet_var, width=30, state="readonly")
+        self.worksheet_combo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(worksheet_frame, text="刷新", command=self.refresh_worksheets).pack(side=tk.LEFT, padx=5)
         
         # 输出文件夹选择
         output_frame = ttk.Frame(main_frame)
@@ -233,6 +246,37 @@ class ExcelImageExtractorApp:
         if file_path:
             self.file_path_var.set(file_path)
             self.log(f"已选择Excel文件: {file_path}")
+            # 加载工作表
+            self.refresh_worksheets()
+    
+    def refresh_worksheets(self):
+        """刷新工作表列表"""
+        excel_file = self.file_path_var.get()
+        if not excel_file or not os.path.exists(excel_file):
+            messagebox.showerror("错误", "请先选择有效的Excel文件!")
+            return
+        
+        try:
+            # 清空工作表下拉列表
+            self.worksheet_combo['values'] = []
+            self.worksheet_var.set("")
+            
+            # 加载工作簿并获取工作表名称
+            wb = openpyxl.load_workbook(excel_file, data_only=True, read_only=True)
+            worksheets = wb.sheetnames
+            
+            if worksheets:
+                # 更新下拉列表
+                self.worksheet_combo['values'] = worksheets
+                # 默认选择第一个工作表
+                self.worksheet_var.set(worksheets[0])
+                self.log(f"检测到 {len(worksheets)} 个工作表: {', '.join(worksheets)}")
+            else:
+                self.log("警告: 未在Excel文件中检测到工作表!")
+        except Exception as e:
+            error_message = f"加载工作表时出错: {str(e)}"
+            self.log(error_message)
+            messagebox.showerror("错误", error_message)
     
     def browse_output_folder(self):
         """浏览并选择输出文件夹"""
@@ -260,6 +304,7 @@ class ExcelImageExtractorApp:
         output_folder = self.output_path_var.get()
         name_col = self.name_col_var.get()
         name_suffix = self.name_suffix_var.get()
+        worksheet_name = self.worksheet_var.get()
         
         # 验证输入
         if not excel_file:
@@ -286,6 +331,7 @@ class ExcelImageExtractorApp:
         
         self.log(f"开始处理Excel文件: {excel_file}")
         self.log(f"输出文件夹: {output_folder}")
+        self.log(f"工作表: {worksheet_name}")
         self.log(f"命名列: {name_col} (索引: {name_col_idx})")
         self.log(f"图片列: {', '.join(img_cols)} (索引: {', '.join(map(str, img_col_indices))})")
         if name_suffix:
@@ -316,7 +362,8 @@ class ExcelImageExtractorApp:
                 output_folder, 
                 name_col_idx, 
                 img_col_indices,
-                name_suffix
+                name_suffix,
+                worksheet_name
             )
             
             # 恢复标准输出
